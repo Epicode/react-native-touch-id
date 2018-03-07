@@ -35,164 +35,148 @@ import java.security.InvalidKeyException;
 import java.security.KeyStoreException;
 import java.security.UnrecoverableKeyException;
 
-
 public class FingerprintAuthModule extends ReactContextBaseJavaModule {
 
-  public static boolean inProgress = false;
+	public static boolean inProgress = false;
 
-  public FingerprintAuthModule(ReactApplicationContext reactContext) {
-    super(reactContext);
-  }
+	public FingerprintAuthModule(ReactApplicationContext reactContext) {
+		super(reactContext);
+	}
 
-  @Override
-  public String getName() {
-    return "FingerprintAuth";
-  }
+	@Override
+	public String getName() {
+		return "FingerprintAuth";
+	}
 
-  @ReactMethod
-  public void isSupported(Callback reactErrorCallback, Callback reactSuccessCallback) {
-    keyguardManager =
-            (KeyguardManager) getCurrentActivity().getSystemService(Context.KEYGUARD_SERVICE);
-    fingerprintManager =
-            (FingerprintManager) getCurrentActivity().getSystemService(Context.FINGERPRINT_SERVICE);
-    if(!isFingerprintAuthAvailable()) {
-      reactErrorCallback.invoke("Not supported.");
-    } else {
-      reactSuccessCallback.invoke("Is supported.");
-    }
-    return ;
-  }
+	@ReactMethod
+	public void isSupported(Callback reactErrorCallback, Callback reactSuccessCallback) {
+		if (!isSupportedSDK()) {
+			reactErrorCallback.invoke("Not supported.");
+			return;
+		}
 
-  @ReactMethod
-  public void authenticate(String reason, ReadableMap authConfig, Callback reactErrorCallback, Callback reactSuccessCallback) {
-    if (!inProgress) {
-      inProgress = true;
-      keyguardManager =
-      (KeyguardManager) getCurrentActivity().getSystemService(Context.KEYGUARD_SERVICE);
-      fingerprintManager =
-      (FingerprintManager) getCurrentActivity().getSystemService(Context.FINGERPRINT_SERVICE);
+		keyguardManager = (KeyguardManager) getCurrentActivity().getSystemService(Context.KEYGUARD_SERVICE);
+		fingerprintManager = (FingerprintManager) getCurrentActivity().getSystemService(Context.FINGERPRINT_SERVICE);
+		if (!isFingerprintAuthAvailable()) {
+			reactErrorCallback.invoke("Not supported.");
+		} else {
+			reactSuccessCallback.invoke("Is supported.");
+		}
+		return;
+	}
 
-      Activity activity = getCurrentActivity();
+	@ReactMethod
+	public void authenticate(String reason, ReadableMap authConfig, Callback reactErrorCallback,
+			Callback reactSuccessCallback) {
+		if (!inProgress) {
+			inProgress = true;
+			keyguardManager = (KeyguardManager) getCurrentActivity().getSystemService(Context.KEYGUARD_SERVICE);
+			fingerprintManager = (FingerprintManager) getCurrentActivity().getSystemService(Context.FINGERPRINT_SERVICE);
 
-      if (isFingerprintAuthAvailable()) {
-        generateKey();
-        if (cipherInit()) {
-          cryptoObject = new FingerprintManager.CryptoObject(cipher);
-          fingerprintDialog = new FingerprintDialog();
-          fingerprintDialog.setCryptoObject(cryptoObject);
+			Activity activity = getCurrentActivity();
 
-          DialogResultHandler drh = new DialogResultHandler(reactErrorCallback, reactSuccessCallback);
+			if (isFingerprintAuthAvailable()) {
+				generateKey();
+				if (cipherInit()) {
+					cryptoObject = new FingerprintManager.CryptoObject(cipher);
+					fingerprintDialog = new FingerprintDialog();
+					fingerprintDialog.setCryptoObject(cryptoObject);
 
-          fingerprintDialog.setReasonForAuthentication(reason);
-          fingerprintDialog.setAuthConfig(authConfig);
-          fingerprintDialog.setDialogCallback(drh);
+					DialogResultHandler drh = new DialogResultHandler(reactErrorCallback, reactSuccessCallback);
 
-          fingerprintDialog.show(activity.getFragmentManager(),"fingerprint_dialog");
-        }
-      }
+					fingerprintDialog.setReasonForAuthentication(reason);
+					fingerprintDialog.setAuthConfig(authConfig);
+					fingerprintDialog.setDialogCallback(drh);
 
-      return;
+					fingerprintDialog.show(activity.getFragmentManager(), "fingerprint_dialog");
+				}
+			}
 
-    }
-  }
+			return;
 
-  /*** TOUH ID ACTIVITY REALTED STUFF ***/
-  private FingerprintDialog fingerprintDialog;
+		}
+	}
 
-  private FingerprintManager fingerprintManager;
-  private KeyguardManager keyguardManager;
+	/*** TOUH ID ACTIVITY REALTED STUFF ***/
+	private FingerprintDialog fingerprintDialog;
 
-  private KeyStore keyStore;
-  private KeyGenerator keyGenerator;
+	private FingerprintManager fingerprintManager;
+	private KeyguardManager keyguardManager;
 
-  private Cipher cipher;
-  private static final String KEY_NAME = "example_key";
+	private KeyStore keyStore;
+	private KeyGenerator keyGenerator;
 
-  private FingerprintManager.CryptoObject cryptoObject;
+	private Cipher cipher;
+	private static final String KEY_NAME = "example_key";
 
-  private Context appContext;
+	private FingerprintManager.CryptoObject cryptoObject;
 
-  public boolean isFingerprintAuthAvailable() {
+	private Context appContext;
 
-      if (android.os.Build.VERSION.SDK_INT < 23) {
-          return false;
-      }
+	public boolean isSupportedSDK() {
+		return android.os.Build.VERSION.SDK_INT >= 23;
+	}
 
-      if (!keyguardManager.isKeyguardSecure()) {
-          return false;
-      }
-    
-      if (!fingerprintManager.isHardwareDetected()) {
-          return false; 
-      }
+	public boolean isFingerprintAuthAvailable() {
+		if (!keyguardManager.isKeyguardSecure()) {
+			return false;
+		}
 
-      if (!fingerprintManager.hasEnrolledFingerprints()) {
-          return false;
-      }
+		if (!fingerprintManager.isHardwareDetected()) {
+			return false;
+		}
 
-      return true;
-  }
+		if (!fingerprintManager.hasEnrolledFingerprints()) {
+			return false;
+		}
 
-  protected void generateKey() {
-      try {
-          keyStore = KeyStore.getInstance("AndroidKeyStore");
-      } catch (Exception e) {
-          e.printStackTrace();
-      }
+		return true;
+	}
 
-      try {
-          keyGenerator = KeyGenerator.getInstance(
-                  KeyProperties.KEY_ALGORITHM_AES,
-                  "AndroidKeyStore");
-      } catch (NoSuchAlgorithmException |
-              NoSuchProviderException e) {
-          throw new RuntimeException(
-                  "Failed to get KeyGenerator instance", e);
-      }
+	protected void generateKey() {
+		try {
+			keyStore = KeyStore.getInstance("AndroidKeyStore");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 
-      try {
-          keyStore.load(null);
-          keyGenerator.init(new
-                  KeyGenParameterSpec.Builder(KEY_NAME,
-                  KeyProperties.PURPOSE_ENCRYPT |
-                          KeyProperties.PURPOSE_DECRYPT)
-                  .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
-                  .setUserAuthenticationRequired(true)
-                  .setEncryptionPaddings(
-                          KeyProperties.ENCRYPTION_PADDING_PKCS7)
-                  .build());
-          keyGenerator.generateKey();
-      } catch (NoSuchAlgorithmException |
-              InvalidAlgorithmParameterException |
-              CertificateException | IOException e) {
-          throw new RuntimeException(e);
-      }
-  }
+		try {
+			keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+		} catch (NoSuchAlgorithmException | NoSuchProviderException e) {
+			throw new RuntimeException("Failed to get KeyGenerator instance", e);
+		}
 
-  public boolean cipherInit() {
-      try {
-          cipher = Cipher.getInstance(
-                  KeyProperties.KEY_ALGORITHM_AES + "/"
-                          + KeyProperties.BLOCK_MODE_CBC + "/"
-                          + KeyProperties.ENCRYPTION_PADDING_PKCS7);
-      } catch (NoSuchAlgorithmException |
-              NoSuchPaddingException e) {
-          throw new RuntimeException("Failed to get Cipher", e);
-      }
+		try {
+			keyStore.load(null);
+			keyGenerator
+					.init(new KeyGenParameterSpec.Builder(KEY_NAME, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+							.setBlockModes(KeyProperties.BLOCK_MODE_CBC).setUserAuthenticationRequired(true)
+							.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7).build());
+			keyGenerator.generateKey();
+		} catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException | CertificateException | IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
 
-      try {
-          keyStore.load(null);
-          SecretKey key = (SecretKey) keyStore.getKey(KEY_NAME,
-                  null);
-          cipher.init(Cipher.ENCRYPT_MODE, key);
-          return true;
-      } catch (InvalidKeyException e) {
-          return false;
-      } catch (KeyStoreException | CertificateException
-              | UnrecoverableKeyException | IOException
-              | NoSuchAlgorithmException e) {
-          throw new RuntimeException("Failed to init Cipher", e);
-      }
-  }
+	public boolean cipherInit() {
+		try {
+			cipher = Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/" + KeyProperties.BLOCK_MODE_CBC + "/"
+					+ KeyProperties.ENCRYPTION_PADDING_PKCS7);
+		} catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+			throw new RuntimeException("Failed to get Cipher", e);
+		}
+
+		try {
+			keyStore.load(null);
+			SecretKey key = (SecretKey) keyStore.getKey(KEY_NAME, null);
+			cipher.init(Cipher.ENCRYPT_MODE, key);
+			return true;
+		} catch (KeyStoreException | CertificateException | UnrecoverableKeyException | IOException
+				| NoSuchAlgorithmException e) {
+			throw new RuntimeException("Failed to init Cipher", e);
+		} catch (InvalidKeyException e) {
+			return false;
+		}
+	}
 
 }
